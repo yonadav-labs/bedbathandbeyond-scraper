@@ -34,7 +34,7 @@ class Category(models.Model):
     url = models.CharField(max_length=250, primary_key=True)
     title = models.CharField(max_length=250)
     parent = models.ForeignKey('Category', null=True)
-    level = models.CharField(max_length=5)
+    level = models.IntegerField()
     
     def __unicode__(self):
         return self.title
@@ -48,6 +48,14 @@ class Category(models.Model):
             if 0 < len(_r):
                 r.extend(_r)
         return r
+
+    def get_all_leaves(self):
+        level = max(self.level, 3)
+        result = []
+        for item in self.get_all_children():
+            if item.level == level:
+                result.append(item.url)
+        return result
 
     class Meta:
         verbose_name_plural = "categories"

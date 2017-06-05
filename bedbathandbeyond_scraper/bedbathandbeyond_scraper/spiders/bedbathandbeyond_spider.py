@@ -29,13 +29,12 @@ class BedbathandbeyondSpider(scrapy.Spider):
 
         if self.task.mode == 1:
             set_old_category_products(self.task.category)
+            self.categories = self.task.category.get_all_leaves()
+
             if self.task.category.url == '/':
-                self.categories = get_subcategories()
                 self.excludes = [item.url for item in Product.objects.all()]
             else:
-                # get leaf(L3) categories
-                self.categories = [self.task.category.url]
-                self.excludes = get_category_products(self.categories[0])
+                self.excludes = get_category_products(self.task.category.url)
         elif self.task.mode == 2:
             self.products = Product.objects.filter(id__in=get_ids(self.task.products))
 
@@ -46,8 +45,6 @@ class BedbathandbeyondSpider(scrapy.Spider):
                 url = item+'/1-1'
                 request = scrapy.Request('https://www.bedbathandbeyond.com'+url,
                                           callback=self.parse)
-                # request.meta['category'] = item
-                # request.meta['proxy'] = 'http://'+random.choice(self.proxy_pool)
                 cate_requests.append(request)
             return cate_requests
         else:
@@ -55,7 +52,6 @@ class BedbathandbeyondSpider(scrapy.Spider):
             for product in self.products:
                 request = scrapy.Request(product.url, 
                                          callback=self.detail)
-                request.meta['category'] = product.category_id
                 product_requests.append(request)
             return product_requests    
 
@@ -113,7 +109,8 @@ class BedbathandbeyondSpider(scrapy.Spider):
         review_count = int(review_count)
 
         details = ''
-        # details = self.get_details(details.css('tr td::text').extract())
+        cate_id = get_param(response.url, 'categoryId')
+        cate = Category.objects.filter(url__contains=cate_id).first()
 
         item = {
             'id': pid,
@@ -123,7 +120,7 @@ class BedbathandbeyondSpider(scrapy.Spider):
             'rating': float(response.xpath('//span[contains(@class, "ratingsReviews")]/@class').extract_first()[-2:])/10,
             'review_count': review_count,
             'promo': discount+shipping,
-            'category_id': get_param(response.url, 'categoryId'),
+            'category_id': cate.url if cate else cate_id,
             'delivery_time': 'Zip Code specific',
             'bullet_points': '\n'.join(response.xpath('//div[@class="hidden printProdDescription"]//li/text()').extract()),
             'details': details,
