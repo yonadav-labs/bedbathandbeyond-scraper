@@ -98,15 +98,9 @@ class BedbathandbeyondSpider(scrapy.Spider):
 
     def detail(self, response):
         pid = int(response.url.split('/')[-1].split('?')[0])
-        try:
-            min_quantity = 1
-            quantity = 9999
-        except Exception, e:
-            if response.css('div.out-of-stock-label'):
-                quantity = 0
-                min_quantity = 0
-            else:
-                quantity = 9999
+
+        min_quantity = 1
+        quantity = 9999
         
         brand = response.css('span[id=brand-name] a::text').extract_first() or ''
         discount = response.css('span[auto-test=savings-price]::text').extract_first() or ''
@@ -118,7 +112,7 @@ class BedbathandbeyondSpider(scrapy.Spider):
         review_count = response.xpath('//span[@class="bvTotalReviewCountClass"]/text()').extract_first() or '0'
         review_count = int(review_count)
 
-        details = response.css('section[id=more] table')
+        details = ''
         # details = self.get_details(details.css('tr td::text').extract())
 
         item = {
@@ -131,11 +125,11 @@ class BedbathandbeyondSpider(scrapy.Spider):
             'promo': discount+shipping,
             'category_id': get_param(response.url, 'categoryId'),
             'delivery_time': 'Zip Code specific',
-            'bullet_points': '\n'.join(response.css('span[itemprop=description] li::text').extract()),
+            'bullet_points': '\n'.join(response.xpath('//div[@class="hidden printProdDescription"]//li/text()').extract()),
             'details': details,
             'quantity': quantity,
             'min_quantity': min_quantity,
-            'special': 'Brand: '+brand,
+            'special': '',
             'url': response.url
         }        
 
