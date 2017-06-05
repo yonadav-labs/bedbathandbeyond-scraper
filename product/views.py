@@ -38,15 +38,15 @@ def init_category(request):
         'shopsNavOutHol.json?v=7'
     ]
 
-    create_category(None, '/', 'All')
+    create_category(None, '/', 'All', 'L0')
 
     for api_category in api_categories:
         url = 'https://www.bedbathandbeyond.com/__ssobj/static/' + api_category
         res = requests.get(url=url)
         for cate in res.json():
-            create_category('/', cate['L1'], cate['L1 Name'])
-            create_category(cate['L1'], cate['L2 URL'], cate['L2 Name'])
-            create_category(cate['L2 URL'], cate['L3 URL'], cate['L3 Name'])
+            create_category('/', cate['L1'], cate['L1 Name'], 'L1')
+            create_category(cate['L1'], cate['L2 URL'], cate['L2 Name'], 'L2')
+            create_category(cate['L2 URL'], cate['L3 URL'], cate['L3 Name'], 'L3')
 
     return HttpResponse('Top categories are successfully initiated')
 
@@ -105,9 +105,9 @@ def get_subcategories(parent='/', title=''):
     return [item.url for item in categories]
 
 
-def create_category(parent, url, title):
+def create_category(parent, url, title, level):
     try:
-        Category.objects.create(parent_id=parent, url=url, title=title)
+        Category.objects.create(parent_id=parent, url=url, title=title, level=level)
     except Exception, e:
         print str(e)
 

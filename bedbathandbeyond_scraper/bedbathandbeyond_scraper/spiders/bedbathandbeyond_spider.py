@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import re
 import os
+import pdb
 import django
 import scrapy
 import requests
@@ -42,9 +43,10 @@ class BedbathandbeyondSpider(scrapy.Spider):
         if self.task.mode == 1:
             cate_requests = []
             for item in self.categories:
-                request = scrapy.Request('https://www.bedbathandbeyond.com'+item,
+                url = item+'/1-1'
+                request = scrapy.Request('https://www.bedbathandbeyond.com'+url,
                                           callback=self.parse)
-                request.meta['category'] = item
+                # request.meta['category'] = item
                 # request.meta['proxy'] = 'http://'+random.choice(self.proxy_pool)
                 cate_requests.append(request)
             return cate_requests
@@ -65,45 +67,40 @@ class BedbathandbeyondSpider(scrapy.Spider):
         if self.stop_scrapy():
             return
 
-        products = response.css('div.products div.product-wrapper')
+        products = response.xpath("//div[contains(@class, 'prodName')]/a/@href").extract()
+        for product in products:
+            detail = 'https://www.bedbathandbeyond.com' + product
+            if not detail in self.excludes:
+                yield scrapy.Request(detail, callback=self.detail)
 
-        if products:
-            for product in products:
-                detail = product.css('div.product-info a::attr(href)').extract_first()
-                detail = detail.split('?')[0]
-                if not detail in self.excludes:
-                    category = response.url.split('?')[0][25:]
-                    request = scrapy.Request(detail, callback=self.detail)
-                    request.meta['category'] = category
-                    yield request
-
-            # for other pages / pagination
-            offset = response.meta.get('offset', 1)
-            total_records = response.meta.get('total_records', self.get_total_records(response))
-            
-            if offset + 60 < total_records:
-                offset += 60
-                base_url = response.url.split('?')[0]
-                next_url = base_url+'?index={}'.format(offset)
-                request = scrapy.Request(next_url, callback=self.parse)
-                request.meta['offset'] = offset
-                request.meta['total_records'] = total_records
-                yield request
+        # for other pages / pagination
+        page = int(get_param(response.url, 'page', 1))
+        total_records = int(get_param(response.url, 'total_records', self.get_total_records(response)))
+        
+        if page * 96 < total_records:
+            page += 1
+            if '-' in response.url.split('/')[-1]:
+                url = '/'.join(response.url.split('/')[:-1])+'/{}-1'.format(page)
+            else:
+                url = '/'.join(response.url.split('/'))+'/{}-1'.format(page)
+            url = add_param(url, 'page', page)
+            url = add_param(url, 'total_records', total_records)
+            yield scrapy.Request(url, callback=self.parse)
 
 
     def get_total_records(self, response):
-        total_records = response.css('div.breadcrumb-wrapper span.result-count::text').extract_first()
-        total_records = re.search(r'\sof ([\d,]+?) Results\s*', total_records)
+        total_records = response.xpath("//li[contains(@class, 'listCount noPadLeft')]/span/text()").extract_first()
+        total_records = re.search(r'\s*of ([\d,]+?) product\(s\)\s*', total_records.replace(u'\xa0', ' '))
         return int(total_records.group(1).replace(',', ''))
 
     def get_url_id(self, url):
         return url.split('?')[0]
 
     def detail(self, response):
-        pid = int(response.css('div.item-number::text').extract_first().strip()[6:])
+        pid = int(response.url.split('/')[-1].split('?')[0])
         try:
             min_quantity = 1
-            quantity = response.css('select.add-quantity option::text').extract()[-1].replace('Quantity: ', '')
+            quantity = 9999
         except Exception, e:
             if response.css('div.out-of-stock-label'):
                 quantity = 0
@@ -114,33 +111,32 @@ class BedbathandbeyondSpider(scrapy.Spider):
         brand = response.css('span[id=brand-name] a::text').extract_first() or ''
         discount = response.css('span[auto-test=savings-price]::text').extract_first() or ''
         shipping = response.css('div.free-shipping-message::text').extract_first() or ''
-        price = response.css('span.monetary-price-value::text').extract_first()
+        price = response.xpath("//span[@itemprop='price']/text()").extract_first()
+        if not price:
+            price = response.xpath("//span[@itemprop='lowPrice']/text()").extract_first()+'-'
+            price += response.xpath("//span[@itemprop='highPrice']/text()").extract_first()
+        review_count = response.xpath('//span[@class="bvTotalReviewCountClass"]/text()').extract_first() or '0'
+        review_count = int(review_count)
 
-        try:
-            review_count = response.css('div.ratings-container span.count::text').extract_first() 
-            review_count = int(review_count.replace(' Reviews', ''))
-        except Exception, e:
-             review_count = 0
-
-        details = response.css('section[id=more] table')[2]
-        details = self.get_details(details.css('tr td::text').extract())
+        details = response.css('section[id=more] table')
+        # details = self.get_details(details.css('tr td::text').extract())
 
         item = {
             'id': pid,
-            'title': response.css('div.product-title h1::text').extract_first(),
-            'price': price,
-            'picture': response.css("div.hero img::attr(src)").extract_first(),
-            'rating': response.css('div.ratings-container span.stars::attr(data-rating)').extract_first() or 0,
+            'title': response.xpath('//h1[@id="productTitle"]/text()').extract_first(),
+            'price': price.replace(',', '').replace(' ',''),
+            'picture': response.xpath('//img[@id="mainProductImg"]/@src').extract_first(),
+            'rating': float(response.xpath('//span[contains(@class, "ratingsReviews")]/@class').extract_first()[-2:])/10,
             'review_count': review_count,
             'promo': discount+shipping,
-            'category_id': response.meta['category'],
+            'category_id': get_param(response.url, 'categoryId'),
             'delivery_time': 'Zip Code specific',
             'bullet_points': '\n'.join(response.css('span[itemprop=description] li::text').extract()),
             'details': details,
             'quantity': quantity,
             'min_quantity': min_quantity,
             'special': 'Brand: '+brand,
-            'url': self.get_url_id(response.url)
+            'url': response.url
         }        
 
         try:
@@ -215,3 +211,12 @@ class BedbathandbeyondSpider(scrapy.Spider):
     def stop_scrapy(self):
         st = ScrapyTask.objects.filter(id=self.task.id).first()
         return not st or st.status == 3
+
+def add_param(url, key, val):
+    con = '&' if '?' in url else '?'
+    return '{}{}{}={}'.format(url, con, key, val)
+
+def get_param(url, key, default=''):
+    if not key in url:
+        return default
+    return url.split(key+'=')[1].split('&')[0]

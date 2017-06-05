@@ -34,7 +34,8 @@ class Category(models.Model):
     url = models.CharField(max_length=250, primary_key=True)
     title = models.CharField(max_length=250)
     parent = models.ForeignKey('Category', null=True)
-
+    level = models.CharField(max_length=5)
+    
     def __unicode__(self):
         return self.title
 
